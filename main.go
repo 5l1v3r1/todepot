@@ -60,7 +60,7 @@ func uploadFile(fileInfo FilePath, baseUrl string) {
 	request, err := http.NewRequest("PUT", uploadUrl, uploadBody)
 
 	if err != nil {
-		log.Fatalf("Failed to create request")
+		log.Fatalf("Failed to create request: %s", err)
 	}
 
 	request.ContentLength = fileInfo.size
