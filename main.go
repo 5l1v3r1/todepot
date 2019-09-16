@@ -51,6 +51,10 @@ func uploadFile(fileInfo FilePath, baseUrl string) {
 		log.Printf("Error reading %s: %s", fileInfo.path, err)
 	}
 
+	defer func() {
+		_ = file.Close()
+	}()
+
 	uploadUrl := baseUrl + fileInfo.name
 
 	var uploadBody io.Reader = file
