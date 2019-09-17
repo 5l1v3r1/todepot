@@ -14,6 +14,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 )
 
 type FilePath struct {
@@ -49,12 +50,12 @@ func getFiles(info os.FileInfo, filesCollection *FilesCollection, urlBasePath st
 	}
 }
 
-func uploadFile(fileInfo FilePath, baseUrl string, bar *pb.ProgressBar) {
+func uploadFile(fileInfo FilePath, baseUrl string, bar *pb.ProgressBar) (bool, string) {
 	client := &http.Client{}
 
 	file, err := os.Open(fileInfo.path)
 	if err != nil {
-		log.Printf("Error reading %s: %s", fileInfo.path, err)
+		return false, fmt.Sprintf("Error reading %s: %s", fileInfo.path, err)
 	}
 
 	uploadUrl := baseUrl + fileInfo.name
@@ -68,24 +69,26 @@ func uploadFile(fileInfo FilePath, baseUrl string, bar *pb.ProgressBar) {
 	request, err := http.NewRequest("PUT", uploadUrl, uploadBody)
 
 	if err != nil {
-		log.Fatalf("Failed to create request: %s", err)
+		return false, fmt.Sprintf("Failed to create request: %s", err)
 	}
 
 	request.ContentLength = fileInfo.size
 	response, err := client.Do(request)
 
+	defer func() {
+		_ = response.Body.Close()
+	}()
+
 	if err != nil {
-		log.Fatalf("Failed to upload %s: %s", fileInfo.name, err)
+		return false, fmt.Sprintf("Failed to upload %s: %s", fileInfo.name, err)
 	} else if response.StatusCode != 200 {
 		buf := new(bytes.Buffer)
 		_, _ = buf.ReadFrom(response.Body)
 
-		log.Fatalf("(%d) Failed to upload %s: %s", response.StatusCode, fileInfo.name, buf.String())
+		return false, fmt.Sprintf("(%d) Failed to upload %s: %s", response.StatusCode, fileInfo.name, buf.String())
 	}
-	err = response.Body.Close()
-	if err != nil {
-		log.Fatalf("Failed to close body of server response")
-	}
+
+	return true, ""
 }
 
 func uploadFiles(files FilesCollection, baseUrl string, printFiles bool, quiet bool, threads int) {
@@ -117,7 +120,16 @@ func uploadFiles(files FilesCollection, baseUrl string, printFiles bool, quiet b
 				<-threadSemaphore // Unlock
 			}()
 
-			uploadFile(file, url, bar)
+			// Upload files and account for failures
+			for i := 0; i < 3; i++ {
+				succeeded, err := uploadFile(file, url, bar)
+				if succeeded {
+					break
+				} else {
+					log.Println(err)
+					time.Sleep(10 * time.Second)
+				}
+			}
 
 			// Update filecount
 			fileCountLock.Lock()
