@@ -51,10 +51,6 @@ func uploadFile(fileInfo FilePath, baseUrl string) {
 		log.Printf("Error reading %s: %s", fileInfo.path, err)
 	}
 
-	defer func() {
-		_ = file.Close()
-	}()
-
 	uploadUrl := baseUrl + fileInfo.name
 
 	var uploadBody io.Reader = file
@@ -69,6 +65,7 @@ func uploadFile(fileInfo FilePath, baseUrl string) {
 
 	request.ContentLength = fileInfo.size
 	response, err := client.Do(request)
+
 	if err != nil {
 		log.Fatalf("Failed to upload %s: %s", fileInfo.name, err)
 	} else if response.StatusCode != 200 {
@@ -76,6 +73,10 @@ func uploadFile(fileInfo FilePath, baseUrl string) {
 		_, _ = buf.ReadFrom(response.Body)
 
 		log.Fatalf("(%d) Failed to upload %s: %s", response.StatusCode, fileInfo.name, buf.String())
+	}
+	err = response.Body.Close()
+	if err != nil {
+		log.Fatalf("Failed to close body of server response")
 	}
 }
 
