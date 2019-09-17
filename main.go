@@ -77,18 +77,19 @@ func uploadFile(fileInfo FilePath, baseUrl string, bar *pb.ProgressBar) (bool, s
 	request.ContentLength = fileInfo.size
 	response, err := client.Do(request)
 
-	defer func() {
-		_ = response.Body.Close()
-	}()
-
 	if err != nil {
 		return false, fmt.Sprintf("Failed to upload %s: %s", fileInfo.name, err)
 	} else if response.StatusCode != 200 {
 		buf := new(bytes.Buffer)
 		_, _ = buf.ReadFrom(response.Body)
+		_ = response.Body.Close()
 
 		return false, fmt.Sprintf("(%d) Failed to upload %s: %s", response.StatusCode, fileInfo.name, buf.String())
 	}
+
+	defer func() {
+		_ = response.Body.Close()
+	}()
 
 	return true, ""
 }
