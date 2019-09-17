@@ -103,7 +103,7 @@ func uploadFiles(files []FilePath, baseUrl string, printFiles bool, quiet bool, 
 			}()
 
 			if printFiles && !quiet {
-				bar.Postfix(" " + fileInfo.path)
+				bar.Postfix(" " + file.path)
 			}
 			bar.Increment()
 
