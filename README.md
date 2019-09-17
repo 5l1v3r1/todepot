@@ -1,3 +1,7 @@
+<p align="center">
+<img src="assets/logo.png" height="150">
+</p>
+
 # todepot
 
 Upload files to a [depot](https://github.com/scriptsmith/depot) server
