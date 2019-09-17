@@ -9,3 +9,8 @@ Usage: todepot [URL] [PATH]...
   -q	No output
   -v	Print uploaded files
 ```
+
+```
+$ todepot $DEPOT_URL data/
+[Files: 14 / 15] [Data: 4.65 MiB / 13.92 MiB] [->___] 33.42% 521.84 KiB p/s ETA 18s
+```
