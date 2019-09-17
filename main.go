@@ -53,6 +53,7 @@ func getFiles(info os.FileInfo, filesCollection *FilesCollection, urlBasePath st
 func uploadFile(fileInfo FilePath, baseUrl string, bar *pb.ProgressBar) (bool, string) {
 	client := &http.Client{}
 
+	// Read file to reader
 	file, err := os.Open(fileInfo.path)
 	if err != nil {
 		return false, fmt.Sprintf("Error reading %s: %s", fileInfo.path, err)
@@ -60,6 +61,7 @@ func uploadFile(fileInfo FilePath, baseUrl string, bar *pb.ProgressBar) (bool, s
 
 	uploadUrl := baseUrl + fileInfo.name
 
+	// upload body is file body or nill if size == 0
 	var uploadBody io.Reader
 	if fileInfo.size == 0 {
 		uploadBody = nil
@@ -92,10 +94,12 @@ func uploadFile(fileInfo FilePath, baseUrl string, bar *pb.ProgressBar) (bool, s
 }
 
 func uploadFiles(files FilesCollection, baseUrl string, printFiles bool, quiet bool, threads int) {
+	// Define bar template
 	tmpl := `[Files: {{string . "filecount"}} / {{string . "filetotal"}}] [Data: {{counters . }}] {{bar . }} {{percent . }} {{speed . }} {{rtime . "ETA %s"}} {{string . "filename"}}`
 	bar := pb.New64(files.total)
 	bar.SetTemplateString(tmpl)
 
+	// Set bar default state
 	bar.Set("filecount", 0)
 	bar.Set("filetotal", len(files.fileList))
 	if !quiet {
@@ -108,6 +112,7 @@ func uploadFiles(files FilesCollection, baseUrl string, printFiles bool, quiet b
 	var fileCount int64 = 0
 	fileCountLock := &sync.Mutex{}
 
+	// Upload files
 	for _, fileInfo := range files.fileList {
 		wg.Add(1)
 
@@ -157,25 +162,28 @@ func myUsage() {
 }
 
 func main() {
+	// Define cli flags
 	flag.Usage = myUsage
 	uploadThreads := flag.Int("k", 8, "Number of simultaneous uploads")
 	searchHidden := flag.Bool("a", false, "Include hidden files")
 	printFiles := flag.Bool("v", false, "Print uploaded files")
 	quiet := flag.Bool("q", false, "No output")
 
+	// Parse flags
 	flag.Parse()
 	args := flag.Args()
-
 	if flag.NArg() < 2 {
 		flag.Usage()
 		os.Exit(1)
 	}
 
+	// Add uuid to url
 	url := strings.Replace(args[0], "[uuid]", uuid.New().String(), -1)
 	if strings.Compare(url, args[0]) != 0 {
 		fmt.Println(url)
 	}
 
+	// Upload paths
 	for _, basePath := range args[1:] {
 		basePath = path.Clean(basePath)
 
