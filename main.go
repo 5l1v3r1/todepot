@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
-	"github.com/cheggaaa/pb"
+	"github.com/cheggaaa/pb/v3"
 	"github.com/google/uuid"
 	"io"
 	"io/ioutil"
@@ -22,7 +22,12 @@ type FilePath struct {
 	size int64
 }
 
-func getFiles(info os.FileInfo, fileList []FilePath, urlBasePath string, fileBasePath string, searchHidden bool) []FilePath {
+type FilesCollection struct {
+	fileList []FilePath
+	total    int64
+}
+
+func getFiles(info os.FileInfo, filesCollection *FilesCollection, urlBasePath string, fileBasePath string, searchHidden bool) {
 	filePath := path.Join(fileBasePath, info.Name())
 	fileName := path.Join(urlBasePath, info.Name())
 
@@ -34,16 +39,17 @@ func getFiles(info os.FileInfo, fileList []FilePath, urlBasePath string, fileBas
 			}
 
 			for _, file := range files {
-				fileList = getFiles(file, fileList, fileName, filePath, searchHidden)
+				getFiles(file, filesCollection, fileName, filePath, searchHidden)
 			}
 		} else {
-			fileList = append(fileList, FilePath{name: fileName, path: filePath, size: info.Size()})
+			newFile := FilePath{name: fileName, path: filePath, size: info.Size()}
+			filesCollection.fileList = append(filesCollection.fileList, newFile)
+			filesCollection.total += info.Size()
 		}
 	}
-	return fileList
 }
 
-func uploadFile(fileInfo FilePath, baseUrl string) {
+func uploadFile(fileInfo FilePath, baseUrl string, bar *pb.ProgressBar) {
 	client := &http.Client{}
 
 	file, err := os.Open(fileInfo.path)
@@ -53,9 +59,11 @@ func uploadFile(fileInfo FilePath, baseUrl string) {
 
 	uploadUrl := baseUrl + fileInfo.name
 
-	var uploadBody io.Reader = file
+	var uploadBody io.Reader
 	if fileInfo.size == 0 {
 		uploadBody = nil
+	} else {
+		uploadBody = bar.NewProxyReader(file)
 	}
 	request, err := http.NewRequest("PUT", uploadUrl, uploadBody)
 
@@ -80,35 +88,48 @@ func uploadFile(fileInfo FilePath, baseUrl string) {
 	}
 }
 
-func uploadFiles(files []FilePath, baseUrl string, printFiles bool, quiet bool, threads int) {
-	bar := pb.New(len(files))
-	if quiet {
-		bar.SetWidth(0)
-		bar.ShowBar = false
-	} else {
+func uploadFiles(files FilesCollection, baseUrl string, printFiles bool, quiet bool, threads int) {
+	tmpl := `[Files: {{string . "filecount"}} / {{string . "filetotal"}}] [Data: {{counters . }}] {{bar . }} {{percent . }} {{speed . }} {{rtime . "ETA %s"}} {{string . "filename"}}`
+	bar := pb.New64(files.total)
+	bar.SetTemplateString(tmpl)
+
+	bar.Set("filecount", 0)
+	bar.Set("filetotal", len(files.fileList))
+	if !quiet {
 		bar.Start()
 	}
 
 	var wg sync.WaitGroup
-	semaphore := make(chan struct{}, threads)
+	threadSemaphore := make(chan struct{}, threads)
 
-	for _, fileInfo := range files {
+	var fileCount int64 = 0
+	fileCountLock := &sync.Mutex{}
+
+	for _, fileInfo := range files.fileList {
 		wg.Add(1)
 
 		go func(file FilePath, url string) {
 			defer wg.Done()
 
-			semaphore <- struct{}{} // Lock
+			// Wait for new availability
+			threadSemaphore <- struct{}{} // Lock
 			defer func() {
-				<-semaphore // Unlock
+				<-threadSemaphore // Unlock
 			}()
 
-			if printFiles && !quiet {
-				bar.Postfix(" " + file.path)
-			}
-			bar.Increment()
+			uploadFile(file, url, bar)
 
-			uploadFile(file, url)
+			// Update filecount
+			fileCountLock.Lock()
+			fileCount += 1
+			bar.Set("filecount", fileCount)
+			fileCountLock.Unlock()
+
+			// Print filename
+			if printFiles && !quiet {
+				bar.Set("filename", file.path)
+			}
+
 		}(fileInfo, baseUrl)
 
 	}
@@ -155,8 +176,8 @@ func main() {
 			log.Fatalf("Couldn't read %s", basePath)
 		}
 
-		files := make([]FilePath, 0)
-		files = getFiles(pathInfo, files, "", path.Dir(basePath), *searchHidden)
+		files := FilesCollection{fileList: make([]FilePath, 0), total: 0}
+		getFiles(pathInfo, &files, "", path.Dir(basePath), *searchHidden)
 		uploadFiles(files, url, *printFiles, *quiet, *uploadThreads)
 	}
 }
