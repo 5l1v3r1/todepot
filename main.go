@@ -50,9 +50,8 @@ func getFiles(info os.FileInfo, filesCollection *FilesCollection, urlBasePath st
 	}
 }
 
-func uploadFile(fileInfo FilePath, baseUrl string, syncFiles bool, bar *pb.ProgressBar) (bool, string) {
+func uploadFile(fileInfo FilePath, baseUrl string, syncFiles bool, client *http.Client, bar *pb.ProgressBar) (bool, string) {
 	uploadUrl := baseUrl + fileInfo.name
-	client := &http.Client{}
 
 	// Check if file exists
 	if syncFiles {
@@ -120,6 +119,8 @@ func uploadFiles(files FilesCollection, baseUrl string, printFiles bool, quiet b
 		bar.Start()
 	}
 
+	client := &http.Client{}
+
 	var wg sync.WaitGroup
 	threadSemaphore := make(chan struct{}, threads)
 
@@ -141,7 +142,7 @@ func uploadFiles(files FilesCollection, baseUrl string, printFiles bool, quiet b
 
 			// Upload files and account for failures
 			for i := 0; i < 3; i++ {
-				succeeded, err := uploadFile(file, url, syncFiles, bar)
+				succeeded, err := uploadFile(file, url, syncFiles, client, bar)
 				if succeeded {
 					break
 				} else {
