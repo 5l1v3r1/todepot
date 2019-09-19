@@ -50,8 +50,23 @@ func getFiles(info os.FileInfo, filesCollection *FilesCollection, urlBasePath st
 	}
 }
 
-func uploadFile(fileInfo FilePath, baseUrl string, bar *pb.ProgressBar) (bool, string) {
+func uploadFile(fileInfo FilePath, baseUrl string, syncFiles bool, bar *pb.ProgressBar) (bool, string) {
+	uploadUrl := baseUrl + fileInfo.name
 	client := &http.Client{}
+
+	// Check if file exists
+	if syncFiles {
+		response, err := client.Get(uploadUrl)
+		if err == nil {
+			_ = response.Body.Close()
+			if response.StatusCode == http.StatusOK {
+				if response.ContentLength == fileInfo.size {
+					bar.Add64(fileInfo.size)
+					return true, ""
+				}
+			}
+		}
+	}
 
 	// Read file to reader
 	file, err := os.Open(fileInfo.path)
@@ -59,9 +74,7 @@ func uploadFile(fileInfo FilePath, baseUrl string, bar *pb.ProgressBar) (bool, s
 		return false, fmt.Sprintf("Error reading %s: %s", fileInfo.path, err)
 	}
 
-	uploadUrl := baseUrl + fileInfo.name
-
-	// upload body is file body or nill if size == 0
+	// upload body is file body or nil if size == 0
 	var uploadBody io.Reader
 	if fileInfo.size == 0 {
 		uploadBody = nil
@@ -94,7 +107,7 @@ func uploadFile(fileInfo FilePath, baseUrl string, bar *pb.ProgressBar) (bool, s
 	return true, ""
 }
 
-func uploadFiles(files FilesCollection, baseUrl string, printFiles bool, quiet bool, threads int) {
+func uploadFiles(files FilesCollection, baseUrl string, printFiles bool, quiet bool, threads int, syncFiles bool) {
 	// Define bar template
 	tmpl := `[Files: {{string . "filecount"}} / {{string . "filetotal"}}] [Data: {{counters . }}] {{bar . }} {{percent . }} {{speed . }} {{rtime . "ETA %s"}} {{string . "filename"}}`
 	bar := pb.New64(files.total)
@@ -128,7 +141,7 @@ func uploadFiles(files FilesCollection, baseUrl string, printFiles bool, quiet b
 
 			// Upload files and account for failures
 			for i := 0; i < 3; i++ {
-				succeeded, err := uploadFile(file, url, bar)
+				succeeded, err := uploadFile(file, url, syncFiles, bar)
 				if succeeded {
 					break
 				} else {
@@ -166,6 +179,7 @@ func main() {
 	// Define cli flags
 	flag.Usage = myUsage
 	uploadThreads := flag.Int("k", 8, "Number of simultaneous uploads")
+	syncFiles := flag.Bool("s", false, "Only upload files not already on the server")
 	searchHidden := flag.Bool("a", false, "Include hidden files")
 	printFiles := flag.Bool("v", false, "Print uploaded files")
 	quiet := flag.Bool("q", false, "No output")
@@ -199,6 +213,6 @@ func main() {
 
 		files := FilesCollection{fileList: make([]FilePath, 0), total: 0}
 		getFiles(pathInfo, &files, "", path.Dir(basePath), *searchHidden)
-		uploadFiles(files, url, *printFiles, *quiet, *uploadThreads)
+		uploadFiles(files, url, *printFiles, *quiet, *uploadThreads, *syncFiles)
 	}
 }
